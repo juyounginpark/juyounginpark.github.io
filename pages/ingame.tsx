@@ -45,10 +45,10 @@ const BASKET_SLOTS: Array<{ left: number; bottom: number }> = [
 const TAP_TIME = 300;
 const TAP_DIST = 24;
 
-// 바구니 비우기 애니메이션 파라미터
-const LIFT_Y = 20;   // 리프트 높이(%) — 바구니/이모지 Y좌표 +20
-const LIFT_MS = 250; // 리프트 상승 시간(ms)
-const FLIP_MS = 700; // 뒤집기 시간(ms)
+// 바구니 비우기 애니메이션 파라미터 (리프트 60% 느리게)
+const LIFT_Y = 20;         // 리프트 높이(%)
+const LIFT_MS = 420;       // 리프트 상승 시간(ms)
+const FLIP_MS = 700;       // 뒤집기 시간(ms)
 
 const rand = (min: number, max: number) => Math.random() * (max - min) + min;
 const dist2 = (x1: number, y1: number, x2: number, y2: number) =>
@@ -125,7 +125,6 @@ function spawnEmojis(count = 20): EmojiItem[] {
     }
 
     if (!ok) {
-      // 혼잡하면 반경 줄여 재시도
       const shrink = radius * 0.8;
       for (let t = 0; t < MAX_TRIES; t++) {
         const left = rand(TREE_AREA.leftMin + shrink, TREE_AREA.leftMax - shrink);
@@ -165,6 +164,8 @@ export default function Ingame() {
 
   /* 이모지들 */
   const [emojis, setEmojis] = React.useState<EmojiItem[]>(() => spawnEmojis(20));
+  const emojisRef = React.useRef<EmojiItem[]>(emojis);
+  React.useEffect(() => { emojisRef.current = emojis; }, [emojis]); // 👈 최신 상태 참조
 
   /* 이모지: 더블탭 판정용 */
   const lastTapPerEmoji = React.useRef<Record<string, { t: number; x: number; y: number }>>({});
@@ -182,12 +183,14 @@ export default function Ingame() {
   /* 바구니 */
   const [basketFlip, setBasketFlip] = React.useState(false);
   const [basketFlippingNow, setBasketFlippingNow] = React.useState(false);
-  const [basketLift, setBasketLift] = React.useState(false); // 👈 리프트 상태
+  const [basketLift, setBasketLift] = React.useState(false);
 
   const basketCount = React.useMemo(
     () => emojis.filter(e => e.state === "inBasket" || e.state === "toBasket").length,
     [emojis]
   );
+
+  const basketSwaying = treeShaking && !basketFlippingNow;
 
   /* ===== 공통 ===== */
   const updateEmoji = React.useCallback((id: string, patch: Partial<EmojiItem>) => {
@@ -242,7 +245,7 @@ export default function Ingame() {
     });
   }, []);
 
-  /* ===== 이모지: 더블클릭/더블탭 → 낙하 → 2초 후 슬롯 이동 ===== */
+  /* ===== 이모지: 더블클릭/더블탭 → 낙하 → 0.5초 후 슬롯 이동 ===== */
   const startFallToBasket = React.useCallback((id: string) => {
     setEmojis(prev => {
       const t = prev.find(e => e.id === id);
@@ -278,7 +281,6 @@ export default function Ingame() {
         delete rafs.current[id];
         delete lastTs.current[id];
 
-        // 2초 → 0.5초로 살짝 빠르게 (요청에 맞춰 조정 가능)
         window.setTimeout(() => reserveSlotAndMove(id), 500);
         return;
       }
@@ -326,7 +328,6 @@ export default function Ingame() {
         delete rafs.current[id];
         delete lastTs.current[id];
 
-        // 1초 후 제거
         if (groundRemoveTimers.current[id]) clearTimeout(groundRemoveTimers.current[id]);
         groundRemoveTimers.current[id] = window.setTimeout(() => {
           updateEmoji(id, { state: "removed" });
@@ -343,16 +344,16 @@ export default function Ingame() {
     rafs.current[id] = requestAnimationFrame(step);
   }, [emojis, updateEmoji]);
 
-  /* ===== 바구니에서 이모지 떨어뜨려 삭제 ===== */
-  const dropFromBasketAndRemove = React.useCallback((id: string) => {
-    // 현재 화면에서 보이는 Y(리프트 적용 상태면 +LIFT_Y)
-    const item = emojis.find(e => e.id === id);
+  /* ===== 바구니에서 이모지 떨어뜨려 삭제 (시작 높이 지정 가능) ===== */
+  const dropFromBasketAndRemove = React.useCallback((id: string, startBottom?: number) => {
+    const item = emojisRef.current.find(e => e.id === id);
     if (!item) return;
 
-    let y = item.bottom + (basketLift ? LIFT_Y : 0);
+    let y = (startBottom != null)
+      ? startBottom
+      : (item.bottom + (basketLift ? LIFT_Y : 0));
     let vy = 0;
 
-    // falling으로 전환하면서 시작 y를 설정
     setEmojis(prev => prev.map(e =>
       e.id === id ? { ...e, state: "falling", bottom: y, vy: 0 } : e
     ));
@@ -376,7 +377,6 @@ export default function Ingame() {
         delete rafs.current[id];
         delete lastTs.current[id];
 
-        // 바닥 닿으면 바로 제거(또는 200~300ms 대기 후 제거)
         window.setTimeout(() => {
           setEmojis(prev => prev.map(e => (e.id === id ? { ...e, state: "removed" } : e)));
         }, 200);
@@ -389,34 +389,46 @@ export default function Ingame() {
     };
 
     rafs.current[id] = requestAnimationFrame(step);
-  }, [emojis, basketLift]);
+  }, [basketLift]);
 
-  /* ===== 바구니: 뒤집어 비우기(리프트 → 플립 + 낙하 → 원위치) ===== */
+  /* ===== 바구니: 탭 → 리프트(느리게) → 플립 + 낙하(리프트된 위치에서 시작) → 원위치 ===== */
   const onBasketClick = React.useCallback(() => {
-    const ids = emojis.filter(e => e.state === "inBasket" || e.state === "toBasket").map(e => e.id);
+    const ids = emojisRef.current
+      .filter(e => e.state === "inBasket" || e.state === "toBasket")
+      .map(e => e.id);
     if (ids.length === 0) return;
     if (basketFlippingNow) return;
 
     setBasketFlippingNow(true);
 
-    // 1) 리프트: 바구니와 내부 이모지 Y + LIFT_Y
+    // 1) 리프트 시작 (바구니 + 바구니 안 과일 모두 상승)
     setBasketLift(true);
 
     window.setTimeout(() => {
-      // 2) 플립 시작 + 내부 이모지 낙하 시작
+      // 2) 플립 시작
       setBasketFlip(true);
-      ids.forEach(id => dropFromBasketAndRemove(id));
 
-      // 3) 플립 종료 → 바구니 원위치
+      // 현재 보이는 높이(= bottom + LIFT_Y)에서 낙하 시작하도록 각각 계산해서 전달
+      const cur = emojisRef.current;
+      ids.forEach(id => {
+        const it = cur.find(e => e.id === id);
+        if (!it) return;
+        const startBottom = it.bottom + LIFT_Y; // lift 적용된 실제 보이는 위치
+        dropFromBasketAndRemove(id, startBottom);
+      });
+
+      // 3) 플립 종료 → 원위치
       window.setTimeout(() => {
         setBasketFlip(false);
         setBasketLift(false);
         setBasketFlippingNow(false);
+        // 실제 비우기(removed가 아닌 toBasket/inBasket 남은 경우 안전청소)
+        removeInBasketAll();
       }, FLIP_MS);
     }, LIFT_MS);
-  }, [emojis, basketFlippingNow, dropFromBasketAndRemove]);
+  }, [basketFlippingNow, removeInBasketAll, dropFromBasketAndRemove]);
 
-  /* ===== 나무: 더블클릭/더블탭 → 2초 좌우+회전 스웨이 → 이모지 낙하 → 제거 → 리스폰 ===== */
+  /* ===== 나무: 더블클릭/더블탭 → 2초 스웨이 → 이모지 낙하 → 제거 → 리스폰 ===== */
   const startTreeShake = React.useCallback(() => {
     if (treeShaking) return;
     setTreeShaking(true);
@@ -424,7 +436,7 @@ export default function Ingame() {
     const SHAKE_MS = 2000;
     window.setTimeout(() => setTreeShaking(false), SHAKE_MS);
 
-    const targets = emojis
+    const targets = emojisRef.current
       .filter(e => e.state === "onTree" || e.state === "wobble")
       .map(e => e.id);
 
@@ -438,7 +450,7 @@ export default function Ingame() {
         return [...keep, ...spawnEmojis(20)];
       });
     }, SHAKE_MS + 2000);
-  }, [treeShaking, emojis, dropToGroundOnly]);
+  }, [treeShaking, dropToGroundOnly]);
 
   const onTreeDoubleClick = React.useCallback(() => {
     startTreeShake();
@@ -468,21 +480,21 @@ export default function Ingame() {
 
   /* ===== 이모지 이벤트 바인딩 ===== */
   const onEmojiClick = React.useCallback((id: string) => {
-    const t = emojis.find(e => e.id === id);
+    const t = emojisRef.current.find(e => e.id === id);
     if (!t) return;
     if (t.state === "inBasket" || t.state === "toBasket") return;
     startWobble(id);
-  }, [emojis, startWobble]);
+  }, [startWobble]);
 
   const onEmojiDoubleClick = React.useCallback((id: string) => {
-    const t = emojis.find(e => e.id === id);
+    const t = emojisRef.current.find(e => e.id === id);
     if (!t) return;
     if (t.state === "inBasket" || t.state === "toBasket") return;
     startFallToBasket(id);
-  }, [emojis, startFallToBasket]);
+  }, [startFallToBasket]);
 
   const onEmojiTouchStart = React.useCallback((id: string, e: React.TouchEvent) => {
-    const t = emojis.find(x => x.id === id);
+    const t = emojisRef.current.find(x => x.id === id);
     if (!t) return;
     if (t.state === "inBasket" || t.state === "toBasket") return;
 
@@ -502,7 +514,7 @@ export default function Ingame() {
       startWobble(id);
       lastTapPerEmoji.current[id] = { t: now, x: touch.clientX, y: touch.clientY };
     }
-  }, [emojis, startFallToBasket, startWobble]);
+  }, [startFallToBasket, startWobble]);
 
   /* ===== 언마운트 클린업 ===== */
   React.useEffect(() => {
@@ -512,6 +524,9 @@ export default function Ingame() {
       Object.values(rafs.current).forEach(rid => cancelAnimationFrame(rid));
     };
   }, []);
+
+  const basketClass =
+    `basket ${basketFlip ? "flip" : ""} ${basketSwaying ? "sway" : ""}`;
 
   return (
     <div
@@ -551,20 +566,21 @@ export default function Ingame() {
             cursor: "pointer",
             userSelect: "none",
             WebkitTapHighlightColor: "transparent",
+            zIndex: 1,
           }}
         />
 
-        {/* 🧺 바구니 (탭: 리프트→플립→비우기) */}
+        {/* 🧺 바구니 (뒤/안쪽) */}
         <img
           src="/images/basket.png"
           alt="basket"
           draggable={false}
           onClick={onBasketClick}
-          className={basketFlip ? "basket flip" : "basket"}
+          className={basketClass}
           css={{
             position: "absolute",
             left: `${BASKET_LEFT}%`,
-            bottom: `${basketLift ? 13 + LIFT_Y : 13}%`, // 👈 리프트 반영
+            bottom: `${basketLift ? 13 + LIFT_Y : 13}%`,
             transform: "translateX(-50%)",
             width: "30%",
             aspectRatio: "1",
@@ -572,7 +588,8 @@ export default function Ingame() {
             userSelect: "none",
             WebkitTapHighlightColor: "transparent",
             cursor: basketCount > 0 ? "pointer" : "default",
-            transition: "bottom 0.25s ease", // 👈 부드러운 상승
+            transition: `bottom ${LIFT_MS}ms ease`,
+            zIndex: 2, // 뒤
           }}
         />
 
@@ -581,10 +598,10 @@ export default function Ingame() {
           .filter(e => e.state !== "removed")
           .map((e) => {
             const inBasket = e.state === "inBasket" || e.state === "toBasket";
-            const effectiveBottom = e.bottom + (basketLift && inBasket ? LIFT_Y : 0); // 👈 리프트 반영
+            const effectiveBottom = e.bottom + (basketLift && inBasket ? LIFT_Y : 0);
             const transition =
               inBasket
-                ? "left 0.8s ease, bottom 0.5s ease, transform 0.25s ease"
+                ? `left 0.8s ease, bottom ${LIFT_MS}ms ease, transform ${LIFT_MS}ms ease`
                 : (e.state === "toBasket" ? "left 0.8s ease, bottom 0.8s ease" : "none");
 
             const swayWithTree = treeShaking && (e.state === "onTree" || e.state === "wobble");
@@ -598,7 +615,14 @@ export default function Ingame() {
                 onDoubleClick={() => onEmojiDoubleClick(e.id)}
                 onTouchStart={(ev) => onEmojiTouchStart(e.id, ev)}
                 onTransitionEnd={(ev) => onEmojiTransitionEnd(ev, e.id)}
-                className={`emoji ${e.state === "wobble" ? "wobble" : ""} ${swayWithTree ? "tree-sway" : ""} ${e.fresh ? "fresh-grow" : ""} ${inBasket ? "in-basket" : ""}`}
+                className={[
+                  "emoji",
+                  e.state === "wobble" ? "wobble" : "",
+                  swayWithTree ? "tree-sway" : "",
+                  e.fresh ? "fresh-grow" : "",
+                  inBasket && basketSwaying ? "in-basket-sway" : "",
+                  inBasket ? "in-basket" : "",
+                ].join(" ").trim()}
                 css={{
                   position: "absolute",
                   left: `${e.left}%`,
@@ -610,17 +634,38 @@ export default function Ingame() {
                   userSelect: "none",
                   WebkitTapHighlightColor: "transparent",
                   outline: "none",
-                  cursor:
-                    inBasket ? "default" : "pointer",
-                  pointerEvents:
-                    inBasket ? "none" : "auto",
+                  cursor: inBasket ? "default" : "pointer",
+                  pointerEvents: inBasket ? "none" : "auto",
                   transition,
+                  zIndex: 3, // 이모지 = 중간
                 }}
               >
                 {e.char}
               </div>
             );
           })}
+
+        {/* 🧺 바구니 앞부분(오버레이) : basket_front.png */}
+        <img
+          src="/images/basket_front.png"
+          alt="basket front"
+          draggable={false}
+          className={basketClass}
+          css={{
+            position: "absolute",
+            left: `${BASKET_LEFT}%`,
+            bottom: `${basketLift ? 13 + LIFT_Y : 13}%`,
+            transform: "translateX(-50%)",
+            width: "30%",
+            aspectRatio: "1",
+            objectFit: "contain",
+            userSelect: "none",
+            WebkitTapHighlightColor: "transparent",
+            pointerEvents: "none",
+            transition: `bottom ${LIFT_MS}ms ease`,
+            zIndex: 4, // 앞
+          }}
+        />
       </div>
 
       {/* 안내 */}
@@ -687,28 +732,39 @@ export default function Ingame() {
         }
         .emoji.tree-sway { animation: swayRot 2s ease; }
 
-        /* 겹칠 때: wobble + tree-sway */
-        .emoji.tree-sway.wobble {
-          animation: wobbleRotate 0.8s ease-in-out, swayRot 2s ease;
+        /* 바구니 좌우 스웨이(나무와 동기) */
+        @keyframes basketSwayX {
+          0%   { transform: translateX(-50%) translateX(0); }
+          10%  { transform: translateX(-50%) translateX(-8px); }
+          20%  { transform: translateX(-50%) translateX(8px); }
+          30%  { transform: translateX(-50%) translateX(-6px); }
+          40%  { transform: translateX(-50%) translateX(6px); }
+          50%  { transform: translateX(-50%) translateX(-4px); }
+          60%  { transform: translateX(-50%) translateX(4px); }
+          70%  { transform: translateX(-50%) translateX(-3px); }
+          80%  { transform: translateX(-50%) translateX(3px); }
+          90%  { transform: translateX(-50%) translateX(-2px); }
+          100% { transform: translateX(-50%) translateX(0); }
         }
+        .basket.sway:not(.flip) { animation: basketSwayX 2s ease; }
 
-        /* 🌱 새로 생성된 이모지: 씨앗 → 살짝 오버슛 → 안정 */
-        @keyframes growIn {
-          0%   { transform: translate(-50%, 0) scale(0.2); opacity: 0; }
-          60%  { transform: translate(-50%, 0) scale(1.08); opacity: 1; }
-          100% { transform: translate(-50%, 0) scale(1); }
+        /* 🍎 바구니 안 이모지 좌우 스웨이(바구니와 함께) */
+        @keyframes inBasketSway {
+          0%   { transform: translate(-50%, 0) rotate(0deg)    translateX(0); }
+          10%  { transform: translate(-50%, 0) rotate(4deg)    translateX(-8px); }
+          20%  { transform: translate(-50%, 0) rotate(-4deg)   translateX(8px); }
+          30%  { transform: translate(-50%, 0) rotate(3deg)    translateX(-6px); }
+          40%  { transform: translate(-50%, 0) rotate(-3deg)   translateX(6px); }
+          50%  { transform: translate(-50%, 0) rotate(2deg)    translateX(-4px); }
+          60%  { transform: translate(-50%, 0) rotate(-2deg)   translateX(4px); }
+          70%  { transform: translate(-50%, 0) rotate(1.5deg)  translateX(-3px); }
+          80%  { transform: translate(-50%, 0) rotate(-1.5deg) translateX(3px); }
+          90%  { transform: translate(-50%, 0) rotate(1deg)    translateX(-2px); }
+          100% { transform: translate(-50%, 0) rotate(0deg)    translateX(0); }
         }
-        .emoji.fresh-grow {
-          animation: growIn 600ms cubic-bezier(.2,.8,.2,1);
-          transform-origin: 50% 70%;
-        }
+        .emoji.in-basket-sway { animation: inBasketSway 2s ease; }
 
-        /* 트리 스웨이 + fresh-grow 동시 */
-        .emoji.tree-sway.fresh-grow {
-          animation: growIn 600ms cubic-bezier(.2,.8,.2,1), swayRot 2s ease;
-        }
-
-        /* 바구니 뒤집힘 */
+        /* 바구니 뒤집힘 (flip) */
         @keyframes flipBasket {
           0%   { transform: translateX(-50%) rotate(0deg); }
           60%  { transform: translateX(-50%) rotate(-170deg); }
@@ -719,17 +775,20 @@ export default function Ingame() {
           transform-origin: 50% 60%;
         }
 
-        /* 클릭 흔들림(wobble) + 자라남(fresh-grow) 동시 적용 */
-        .emoji.wobble.fresh-grow {
-          animation: wobbleRotate 0.8s ease-in-out, growIn 600ms cubic-bezier(.2,.8,.2,1);
+        /* 🌱 새로 생성된 이모지 */
+        @keyframes growIn {
+          0%   { transform: translate(-50%, 0) scale(0.2); opacity: 0; }
+          60%  { transform: translate(-50%, 0) scale(1.08); opacity: 1; }
+          100% { transform: translate(-50%, 0) scale(1); }
+        }
+        .emoji.fresh-grow {
+          animation: growIn 600ms cubic-bezier(.2,.8,.2,1);
+          transform-origin: 50% 70%;
         }
 
-        /* 트리 스웨이 + 클릭 흔들림 동시 적용 */
-        .emoji.tree-sway.wobble {
-          animation: wobbleRotate 0.8s ease-in-out, swayRot 2s ease;
-        }
-
-        /* 트리 스웨이 + 클릭 흔들림 + 자라남 모두 동시 적용 */
+        /* 겹침 조합들 */
+        .emoji.tree-sway.wobble { animation: wobbleRotate 0.8s ease-in-out, swayRot 2s ease; }
+        .emoji.wobble.fresh-grow { animation: wobbleRotate 0.8s ease-in-out, growIn 600ms cubic-bezier(.2,.8,.2,1); }
         .emoji.tree-sway.wobble.fresh-grow {
           animation: wobbleRotate 0.8s ease-in-out, growIn 600ms cubic-bezier(.2,.8,.2,1), swayRot 2s ease;
         }
