@@ -165,7 +165,7 @@ export default function Ingame() {
   /* 이모지들 */
   const [emojis, setEmojis] = React.useState<EmojiItem[]>(() => spawnEmojis(20));
   const emojisRef = React.useRef<EmojiItem[]>(emojis);
-  React.useEffect(() => { emojisRef.current = emojis; }, [emojis]); // 👈 최신 상태 참조
+  React.useEffect(() => { emojisRef.current = emojis; }, [emojis]);
 
   /* 이모지: 더블탭 판정용 */
   const lastTapPerEmoji = React.useRef<Record<string, { t: number; x: number; y: number }>>({});
@@ -190,7 +190,7 @@ export default function Ingame() {
     [emojis]
   );
 
-  const basketSwaying = treeShaking && !basketFlippingNow;
+  const basketSwaying = treeShaking && !basketFlippingNow; // 🌳가 흔들리면 바구니/바구니 과일도 같이 스웨이
 
   /* ===== 공통 ===== */
   const updateEmoji = React.useCallback((id: string, patch: Partial<EmojiItem>) => {
@@ -205,7 +205,7 @@ export default function Ingame() {
   const startWobble = React.useCallback((id: string) => {
     setEmojis(prev => {
       const t = prev.find(e => e.id === id);
-      if (!t || t.state !== "onTree") return prev;
+      if (!t || (t.state !== "onTree" && t.state !== "wobble")) return prev;
       return prev.map(e => (e.id === id ? { ...e, state: "wobble" } : e));
     });
 
@@ -254,7 +254,6 @@ export default function Ingame() {
       return prev.map(e => (e.id === id ? { ...e, state: "falling", vy: 0 } : e));
     });
 
-    // 로컬 물리
     let y: number;
     let vy = 0;
     {
@@ -408,12 +407,12 @@ export default function Ingame() {
       // 2) 플립 시작
       setBasketFlip(true);
 
-      // 현재 보이는 높이(= bottom + LIFT_Y)에서 낙하 시작하도록 각각 계산해서 전달
+      // 현재 보이는 높이(= bottom + LIFT_Y)에서 낙하 시작하도록 각각 전달
       const cur = emojisRef.current;
       ids.forEach(id => {
         const it = cur.find(e => e.id === id);
         if (!it) return;
-        const startBottom = it.bottom + LIFT_Y; // lift 적용된 실제 보이는 위치
+        const startBottom = it.bottom + LIFT_Y;
         dropFromBasketAndRemove(id, startBottom);
       });
 
@@ -422,8 +421,7 @@ export default function Ingame() {
         setBasketFlip(false);
         setBasketLift(false);
         setBasketFlippingNow(false);
-        // 실제 비우기(removed가 아닌 toBasket/inBasket 남은 경우 안전청소)
-        removeInBasketAll();
+        removeInBasketAll(); // 안전 청소
       }, FLIP_MS);
     }, LIFT_MS);
   }, [basketFlippingNow, removeInBasketAll, dropFromBasketAndRemove]);
@@ -597,10 +595,10 @@ export default function Ingame() {
         {emojis
           .filter(e => e.state !== "removed")
           .map((e) => {
-            const inBasket = e.state === "inBasket" || e.state === "toBasket";
-            const effectiveBottom = e.bottom + (basketLift && inBasket ? LIFT_Y : 0);
+            const inBasketLike = e.state === "inBasket" || e.state === "toBasket"; // ← 이동 중도 바구니 스웨이 동참
+            const effectiveBottom = e.bottom + (basketLift && inBasketLike ? LIFT_Y : 0);
             const transition =
-              inBasket
+              inBasketLike
                 ? `left 0.8s ease, bottom ${LIFT_MS}ms ease, transform ${LIFT_MS}ms ease`
                 : (e.state === "toBasket" ? "left 0.8s ease, bottom 0.8s ease" : "none");
 
@@ -618,10 +616,10 @@ export default function Ingame() {
                 className={[
                   "emoji",
                   e.state === "wobble" ? "wobble" : "",
-                  swayWithTree ? "tree-sway" : "",
+                  swayWithTree ? "tree-sway" : "",      // 🌳 매달린 과일: 좌우 이동 + 각도
                   e.fresh ? "fresh-grow" : "",
-                  inBasket && basketSwaying ? "in-basket-sway" : "",
-                  inBasket ? "in-basket" : "",
+                  inBasketLike && basketSwaying ? "in-basket-sway" : "", // 🧺 바구니/이동중 과일: 바구니 스웨이
+                  inBasketLike ? "in-basket" : "",
                 ].join(" ").trim()}
                 css={{
                   position: "absolute",
@@ -634,8 +632,8 @@ export default function Ingame() {
                   userSelect: "none",
                   WebkitTapHighlightColor: "transparent",
                   outline: "none",
-                  cursor: inBasket ? "default" : "pointer",
-                  pointerEvents: inBasket ? "none" : "auto",
+                  cursor: inBasketLike ? "default" : "pointer",
+                  pointerEvents: inBasketLike ? "none" : "auto",
                   transition,
                   zIndex: 3, // 이모지 = 중간
                 }}
@@ -684,12 +682,12 @@ export default function Ingame() {
           borderRadius: "6px",
         }}
       >
-        나무를 <b>더블탭</b>하여 새로고침
-      </div>
+        나무를 <b>더블탭</b>하여 새로고침 
+        </div>
 
       {/* 전역 keyframes */}
       <style jsx global>{`
-        /* 나무 좌우 흔들림 */
+        /* 🌳 나무 좌우 스웨이(트랜슬레이트) */
         @keyframes shakeX {
           0%   { transform: translateX(0); }
           10%  { transform: translateX(-10px); }
@@ -705,18 +703,7 @@ export default function Ingame() {
         }
         .shake { animation: shakeX 2s ease; }
 
-        /* 이모지: 단일 흔들림(±40°, 0.8초) */
-        @keyframes wobbleRotate {
-          0%   { transform: translate(-50%, 0) rotate(0deg); }
-          15%  { transform: translate(-50%, 0) rotate(40deg); }
-          35%  { transform: translate(-50%, 0) rotate(-32deg); }
-          55%  { transform: translate(-50%, 0) rotate(24deg); }
-          75%  { transform: translate(-50%, 0) rotate(-12deg); }
-          100% { transform: translate(-50%, 0) rotate(0deg); }
-        }
-        .emoji.wobble { animation: wobbleRotate 0.8s ease-in-out; }
-
-        /* 이모지: 나무와 동조 좌우 + 회전 스웨이(2초) */
+        /* 🍎 매달린 과일: 각도 + 좌우 이동(트리와 동기) */
         @keyframes swayRot {
           0%   { transform: translate(-50%, 0) rotate(0deg)    translateX(0); }
           10%  { transform: translate(-50%, 0) rotate(14deg)   translateX(-10px); }
@@ -732,39 +719,50 @@ export default function Ingame() {
         }
         .emoji.tree-sway { animation: swayRot 2s ease; }
 
-        /* 바구니 좌우 스웨이(나무와 동기) */
+        /* 🍎 단일 클릭 흔들림(±40°, 0.8초) */
+        @keyframes wobbleRotate {
+          0%   { transform: translate(-50%, 0) rotate(0deg); }
+          15%  { transform: translate(-50%, 0) rotate(40deg); }
+          35%  { transform: translate(-50%, 0) rotate(-32deg); }
+          55%  { transform: translate(-50%, 0) rotate(24deg); }
+          75%  { transform: translate(-50%, 0) rotate(-12deg); }
+          100% { transform: translate(-50%, 0) rotate(0deg); }
+        }
+        .emoji.wobble { animation: wobbleRotate 0.8s ease-in-out; }
+
+        /* 🧺 바구니 좌우 스웨이(트리와 동기) */
         @keyframes basketSwayX {
           0%   { transform: translateX(-50%) translateX(0); }
-          10%  { transform: translateX(-50%) translateX(-8px); }
-          20%  { transform: translateX(-50%) translateX(8px); }
-          30%  { transform: translateX(-50%) translateX(-6px); }
-          40%  { transform: translateX(-50%) translateX(6px); }
-          50%  { transform: translateX(-50%) translateX(-4px); }
-          60%  { transform: translateX(-50%) translateX(4px); }
-          70%  { transform: translateX(-50%) translateX(-3px); }
-          80%  { transform: translateX(-50%) translateX(3px); }
+          10%  { transform: translateX(-50%) translateX(-10px); }
+          20%  { transform: translateX(-50%) translateX(10px); }
+          30%  { transform: translateX(-50%) translateX(-8px); }
+          40%  { transform: translateX(-50%) translateX(8px); }
+          50%  { transform: translateX(-50%) translateX(-6px); }
+          60%  { transform: translateX(-50%) translateX(6px); }
+          70%  { transform: translateX(-50%) translateX(-4px); }
+          80%  { transform: translateX(-50%) translateX(4px); }
           90%  { transform: translateX(-50%) translateX(-2px); }
           100% { transform: translateX(-50%) translateX(0); }
         }
         .basket.sway:not(.flip) { animation: basketSwayX 2s ease; }
 
-        /* 🍎 바구니 안 이모지 좌우 스웨이(바구니와 함께) */
+        /* 🍎 바구니(또는 슬롯 이동 중) 과일: 바구니와 같은 좌우 이동 */
         @keyframes inBasketSway {
           0%   { transform: translate(-50%, 0) rotate(0deg)    translateX(0); }
-          10%  { transform: translate(-50%, 0) rotate(4deg)    translateX(-8px); }
-          20%  { transform: translate(-50%, 0) rotate(-4deg)   translateX(8px); }
-          30%  { transform: translate(-50%, 0) rotate(3deg)    translateX(-6px); }
-          40%  { transform: translate(-50%, 0) rotate(-3deg)   translateX(6px); }
-          50%  { transform: translate(-50%, 0) rotate(2deg)    translateX(-4px); }
-          60%  { transform: translate(-50%, 0) rotate(-2deg)   translateX(4px); }
-          70%  { transform: translate(-50%, 0) rotate(1.5deg)  translateX(-3px); }
-          80%  { transform: translate(-50%, 0) rotate(-1.5deg) translateX(3px); }
+          10%  { transform: translate(-50%, 0) rotate(4deg)    translateX(-10px); }
+          20%  { transform: translate(-50%, 0) rotate(-4deg)   translateX(10px); }
+          30%  { transform: translate(-50%, 0) rotate(3deg)    translateX(-8px); }
+          40%  { transform: translate(-50%, 0) rotate(-3deg)   translateX(8px); }
+          50%  { transform: translate(-50%, 0) rotate(2deg)    translateX(-6px); }
+          60%  { transform: translate(-50%, 0) rotate(-2deg)   translateX(6px); }
+          70%  { transform: translate(-50%, 0) rotate(1.5deg)  translateX(-4px); }
+          80%  { transform: translate(-50%, 0) rotate(-1.5deg) translateX(4px); }
           90%  { transform: translate(-50%, 0) rotate(1deg)    translateX(-2px); }
           100% { transform: translate(-50%, 0) rotate(0deg)    translateX(0); }
         }
         .emoji.in-basket-sway { animation: inBasketSway 2s ease; }
 
-        /* 바구니 뒤집힘 (flip) */
+        /* 🧺 플립(뒤집기) */
         @keyframes flipBasket {
           0%   { transform: translateX(-50%) rotate(0deg); }
           60%  { transform: translateX(-50%) rotate(-170deg); }
@@ -786,7 +784,7 @@ export default function Ingame() {
           transform-origin: 50% 70%;
         }
 
-        /* 겹침 조합들 */
+        /* 조합 케이스들 */
         .emoji.tree-sway.wobble { animation: wobbleRotate 0.8s ease-in-out, swayRot 2s ease; }
         .emoji.wobble.fresh-grow { animation: wobbleRotate 0.8s ease-in-out, growIn 600ms cubic-bezier(.2,.8,.2,1); }
         .emoji.tree-sway.wobble.fresh-grow {
