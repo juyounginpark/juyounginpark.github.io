@@ -1,4 +1,4 @@
-/* 🌳 나무 좌우 스웨이(트랜슬레이트) */
+/* 🌳 나무 좌우 스웨이 */
 @keyframes shakeX {
   0%   { transform: translateX(0); }
   10%  { transform: translateX(-10px); }
@@ -14,23 +14,23 @@
 }
 .shake { animation: shakeX 2s ease; }
 
-/* 🍎 매달린 과일: 각도 + 좌우 이동(트리와 동기) */
+/* 🍎 매달린 과일 (나무와 동기화: 좌우 이동 + 회전) */
 @keyframes swayRot {
-  0%   { transform: translate(-50%, 0) rotate(0deg)    translateX(0); }
-  10%  { transform: translate(-50%, 0) rotate(14deg)   translateX(-10px); }
-  20%  { transform: translate(-50%, 0) rotate(-14deg)  translateX(10px); }
-  30%  { transform: translate(-50%, 0) rotate(12deg)   translateX(-8px); }
-  40%  { transform: translate(-50%, 0) rotate(-12deg)  translateX(8px); }
-  50%  { transform: translate(-50%, 0) rotate(9deg)    translateX(-6px); }
-  60%  { transform: translate(-50%, 0) rotate(-9deg)   translateX(6px); }
-  70%  { transform: translate(-50%, 0) rotate(6deg)    translateX(-4px); }
-  80%  { transform: translate(-50%, 0) rotate(-6deg)   translateX(4px); }
-  90%  { transform: translate(-50%, 0) rotate(3deg)    translateX(-2px); }
-  100% { transform: translate(-50%, 0) rotate(0deg)    translateX(0); }
+  0%   { transform: translate(-50%, 0) rotate(0deg)     translateX(0); }
+  10%  { transform: translate(-50%, 0) rotate(18deg)    translateX(-14px); }
+  20%  { transform: translate(-50%, 0) rotate(-18deg)   translateX(14px); }
+  30%  { transform: translate(-50%, 0) rotate(15deg)    translateX(-12px); }
+  40%  { transform: translate(-50%, 0) rotate(-15deg)   translateX(12px); }
+  50%  { transform: translate(-50%, 0) rotate(11deg)    translateX(-9px); }
+  60%  { transform: translate(-50%, 0) rotate(-11deg)   translateX(9px); }
+  70%  { transform: translate(-50%, 0) rotate(7deg)     translateX(-6px); }
+  80%  { transform: translate(-50%, 0) rotate(-7deg)    translateX(6px); }
+  90%  { transform: translate(-50%, 0) rotate(3.5deg)   translateX(-3px); }
+  100% { transform: translate(-50%, 0) rotate(0deg)     translateX(0); }
 }
-.emoji.tree-sway { animation: swayRot 2s ease; }
+.emoji.tree-sway { animation: swayRot 1.6s cubic-bezier(.32,.72,.2,1); }
 
-/* 🍎 단일 클릭 흔들림(±40°, 0.8초) */
+/* 🍎 단일 클릭 흔들림 */
 @keyframes wobbleRotate {
   0%   { transform: translate(-50%, 0) rotate(0deg); }
   15%  { transform: translate(-50%, 0) rotate(40deg); }
@@ -41,7 +41,7 @@
 }
 .emoji.wobble { animation: wobbleRotate 0.8s ease-in-out; }
 
-/* 🧺 바구니 좌우 스웨이(트리와 동기) */
+/* 🧺 바구니 좌우 흔들림 */
 @keyframes basketSwayX {
   0%   { transform: translateX(-50%) translateX(0); }
   10%  { transform: translateX(-50%) translateX(-10px); }
@@ -57,7 +57,7 @@
 }
 .basket.sway:not(.flip) { animation: basketSwayX 2s ease; }
 
-/* 🍎 바구니(또는 슬롯 이동 중) 과일: 바구니와 같은 좌우 이동 */
+/* 🍎 바구니 속 과일 흔들림 */
 @keyframes inBasketSway {
   0%   { transform: translate(-50%, 0) rotate(0deg)    translateX(0); }
   10%  { transform: translate(-50%, 0) rotate(4deg)    translateX(-10px); }
@@ -73,7 +73,7 @@
 }
 .emoji.in-basket-sway { animation: inBasketSway 2s ease; }
 
-/* 🧺 플립(뒤집기) — JS 상수 FLIP_MS(700ms)와 맞춰주세요 */
+/* 🧺 바구니 뒤집기 */
 @keyframes flipBasket {
   0%   { transform: translateX(-50%) rotate(0deg); }
   60%  { transform: translateX(-50%) rotate(-170deg); }
@@ -84,7 +84,7 @@
   transform-origin: 50% 60%;
 }
 
-/* 🌱 새로 생성된 이모지 */
+/* 🌱 새로 생성된 과일 */
 @keyframes growIn {
   0%   { transform: translate(-50%, 0) scale(0.2); opacity: 0; }
   60%  { transform: translate(-50%, 0) scale(1.08); opacity: 1; }
@@ -95,9 +95,49 @@
   transform-origin: 50% 70%;
 }
 
-/* 조합 케이스들 */
-.emoji.tree-sway.wobble { animation: wobbleRotate 0.8s ease-in-out, swayRot 2s ease; }
-.emoji.wobble.fresh-grow { animation: wobbleRotate 0.8s ease-in-out, growIn 600ms cubic-bezier(.2,.8,.2,1); }
-.emoji.tree-sway.wobble.fresh-grow {
-  animation: wobbleRotate 0.8s ease-in-out, growIn 600ms cubic-bezier(.2,.8,.2,1), swayRot 2s ease;
+/* 과일 레이어가 좌우 이동 중 (이미 있음) */
+/* .fruit-layer.shake { animation: shakeX 1.8s ease; } */
+
+/* 매달린 과일: '회전만' 살짝 격하게 */
+@keyframes hangRotate {
+  0%   { transform: translate(-50%,0) rotate(0deg); }
+  10%  { transform: translate(-50%,0) rotate(18deg); }
+  20%  { transform: translate(-50%,0) rotate(-18deg); }
+  30%  { transform: translate(-50%,0) rotate(15deg); }
+  40%  { transform: translate(-50%,0) rotate(-15deg); }
+  50%  { transform: translate(-50%,0) rotate(11deg); }
+  60%  { transform: translate(-50%,0) rotate(-11deg); }
+  70%  { transform: translate(-50%,0) rotate(7deg); }
+  80%  { transform: translate(-50%,0) rotate(-7deg); }
+  90%  { transform: translate(-50%,0) rotate(3.5deg); }
+  100% { transform: translate(-50%,0) rotate(0deg); }
 }
+.emoji.tree-rotate {
+  animation: hangRotate 1.6s cubic-bezier(.32,.72,.2,1);
+}
+
+/* 조합 케이스도 유지 */
+.emoji.tree-rotate.wobble {
+  animation: wobbleRotate 0.8s ease-in-out, hangRotate 1.6s cubic-bezier(.32,.72,.2,1);
+}
+.emoji.tree-rotate.wobble.fresh-grow {
+  animation:
+    wobbleRotate 0.8s ease-in-out,
+    growIn 600ms cubic-bezier(.2,.8,.2,1),
+    hangRotate 1.6s cubic-bezier(.32,.72,.2,1);
+}
+
+
+/* 🌀 조합 케이스 */
+.emoji.tree-sway.wobble {
+  animation: wobbleRotate 0.8s ease-in-out, swayRot 1.6s cubic-bezier(.32,.72,.2,1);
+}
+.emoji.wobble.fresh-grow {
+  animation: wobbleRotate 0.8s ease-in-out, growIn 600ms cubic-bezier(.2,.8,.2,1);
+}
+.emoji.tree-sway.wobble.fresh-grow {
+  animation: wobbleRotate 0.8s ease-in-out,
+             growIn 600ms cubic-bezier(.2,.8,.2,1),
+             swayRot 1.6s cubic-bezier(.32,.72,.2,1);
+}
+
