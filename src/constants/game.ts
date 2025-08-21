@@ -17,7 +17,7 @@ export const SCALE_MAX = 1.2;
 export const RADIUS_BASE_PCT = 4.0;
 
 // 물리 파라미터
-export const GROUND_BOTTOM = 5;   // 바닥 Y(%)
+export const GROUND_BOTTOM = 15;   // 바닥 Y(%)
 export const GRAVITY = -220;      // %/s^2
 
 // 바구니 셋업
