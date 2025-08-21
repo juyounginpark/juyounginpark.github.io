@@ -3,9 +3,9 @@ export const R = 0.809;
 
 // 나무 위 랜덤 배치 영역(스테이지 % 좌표)
 export const TREE_AREA = {
-  leftMin: 25,
-  leftMax: 75,
-  bottomMin: 45,
+  leftMin: 15,
+  leftMax: 85,
+  bottomMin: 35,
   bottomMax: 80,
 };
 
@@ -46,6 +46,6 @@ export const FLIP_MS = 700;   // 뒤집기 시간(ms)
 
 // 이모지 풀
 export const EMOJI_POOL = [
-  "🍎","🍏","🍐","🍊","🍋","🍒","🍇","🍑","🍓","🍌",
-  "🍉","🥝","🥥","🍍","🥭","🍈","🍅","🌰","🥕","🍆"
+  "😊","😁","😒","😍","🤣","🫣","😡","😘","😶‍🌫️","😱",
+  "🚓","🌭","💿","🥷","👩‍🍳","🧑‍🎄","🚨","🧜‍♂️","🥕","🍆"
 ];
