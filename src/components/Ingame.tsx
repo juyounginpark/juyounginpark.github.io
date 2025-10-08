@@ -1,6 +1,7 @@
 /** @jsxImportSource @emotion/react */
 "use client";
 import * as React from "react";
+import { useRouter } from "next/navigation";
 import "../styles/ingame.css";
 
 import {
@@ -16,6 +17,8 @@ import { spawnEmojis } from "../utils/spawnEmojis";
  * 컴포넌트
  * ========================= */
 export default function Ingame() {
+  const router = useRouter();
+
   /* 나무 흔들림 (더블탭/더블클릭만) */
   const [treeShaking, setTreeShaking] = React.useState(false);
   const lastTapTreeRef = React.useRef<{ t: number; x: number; y: number }>({ t: 0, x: 0, y: 0 });
@@ -48,7 +51,22 @@ export default function Ingame() {
     [emojis]
   );
 
-  const basketSwaying = treeShaking && !basketFlippingNow; // 🌳가 흔들리면 바구니/바구니 과일도 같이 스웨이
+  const basketSwaying = treeShaking && !basketFlippingNow;
+
+  /* ===== 확인 버튼 클릭 시 페이지 이동 핸들러 ===== */
+  const handleConfirmClick = React.useCallback(() => {
+    // 바구니에 담긴 이모지들의 문자(char)만 추출합니다.
+    const inBasketEmojiChars = emojisRef.current
+      .filter(e => e.state === "inBasket" || e.state === "toBasket")
+      .map(e => e.char);
+    
+    // 이모지 문자열을 쉼표로 구분하여 쿼리 파라미터로 만듭니다.
+    const queryString = inBasketEmojiChars.length > 0 
+      ? `?emojis=${encodeURIComponent(inBasketEmojiChars.join(','))}`
+      : '';
+    
+    router.push(`/result${queryString}`); // 쿼리 파라미터를 추가하여 페이지 이동
+  }, [router, emojisRef]);
 
   /* ===== 공통 ===== */
   const updateEmoji = React.useCallback((id: string, patch: Partial<EmojiItem>) => {
@@ -105,14 +123,16 @@ export default function Ingame() {
 
   /* ===== 이모지: 더블클릭/더블탭 → 낙하 → 0.5초 후 슬롯 이동 ===== */
   const startFallToBasket = React.useCallback((id: string) => {
-    setEmojis(prev => {
-      const t = prev.find(e => e.id === id);
-      if (!t) return prev;
-      if (t.state !== "onTree" && t.state !== "wobble") return prev;
-      return prev.map(e => (e.id === id ? { ...e, state: "falling", vy: 0 } : e));
-    });
+    const current = emojisRef.current.find(e => e.id === id);
+    if (!current) return;
+    if (current.state !== "onTree" && current.state !== "wobble") return;
+    if (basketCount >= BASKET_CAPACITY) return;
 
-    let y = emojis.find(e => e.id === id)?.bottom ?? 65;
+    const startY = current.bottom;
+
+    setEmojis(prev => prev.map(e => (e.id === id ? { ...e, state: "falling", vy: 0 } : e)));
+
+    let y = startY;
     let vy = 0;
 
     const step = (ts: number) => {
@@ -144,18 +164,19 @@ export default function Ingame() {
     };
 
     rafs.current[id] = requestAnimationFrame(step);
-  }, [emojis, reserveSlotAndMove]);
+  }, [reserveSlotAndMove, basketCount]);
 
   /* ===== 이모지: 바닥까지만 낙하(나무 흔들림 완료 후 강제 낙하) → 1초 뒤 제거 ===== */
   const dropToGroundOnly = React.useCallback((id: string) => {
-    setEmojis(prev => {
-      const t = prev.find(e => e.id === id);
-      if (!t) return prev;
-      if (t.state !== "onTree" && t.state !== "wobble") return prev;
-      return prev.map(e => (e.id === id ? { ...e, state: "falling", vy: 0 } : e));
-    });
+    const current = emojisRef.current.find(e => e.id === id);
+    if (!current) return;
+    if (current.state !== "onTree" && current.state !== "wobble") return;
 
-    let y = emojis.find(e => e.id === id)?.bottom ?? 65;
+    const startY = current.bottom;
+
+    setEmojis(prev => prev.map(e => (e.id === id ? { ...e, state: "falling", vy: 0 } : e)));
+
+    let y = startY;
     let vy = 0;
 
     const step = (ts: number) => {
@@ -179,7 +200,7 @@ export default function Ingame() {
 
         if (groundRemoveTimers.current[id]) clearTimeout(groundRemoveTimers.current[id]);
         groundRemoveTimers.current[id] = window.setTimeout(() => {
-          updateEmoji(id, { state: "removed" });
+          setEmojis(prev => prev.map(e => (e.id === id ? { ...e, state: "removed" } : e)));
           delete groundRemoveTimers.current[id];
         }, 1000);
         return;
@@ -191,7 +212,7 @@ export default function Ingame() {
     };
 
     rafs.current[id] = requestAnimationFrame(step);
-  }, [emojis, updateEmoji]);
+  }, []);
 
   /* ===== 바구니에서 이모지 떨어뜨려 삭제 (시작 높이 지정 가능) ===== */
   const dropFromBasketAndRemove = React.useCallback((id: string, startBottom?: number) => {
@@ -249,15 +270,10 @@ export default function Ingame() {
     if (basketFlippingNow) return;
 
     setBasketFlippingNow(true);
-
-    // 1) 리프트 시작 (바구니 + 바구니 안 과일 모두 상승)
     setBasketLift(true);
 
     window.setTimeout(() => {
-      // 2) 플립 시작
       setBasketFlip(true);
-
-      // 현재 보이는 높이(= bottom + LIFT_Y)에서 낙하 시작
       const cur = emojisRef.current;
       ids.forEach(id => {
         const it = cur.find(e => e.id === id);
@@ -265,13 +281,11 @@ export default function Ingame() {
         const startBottom = it.bottom + LIFT_Y;
         dropFromBasketAndRemove(id, startBottom);
       });
-
-      // 3) 플립 종료 → 원위치
       window.setTimeout(() => {
         setBasketFlip(false);
         setBasketLift(false);
         setBasketFlippingNow(false);
-        removeInBasketAll(); // 안전 청소
+        removeInBasketAll();
       }, FLIP_MS);
     }, LIFT_MS);
   }, [basketFlippingNow, removeInBasketAll, dropFromBasketAndRemove]);
@@ -310,9 +324,9 @@ export default function Ingame() {
     const dt = now - lastTapTreeRef.current.t;
     const dx = touch.clientX - lastTapTreeRef.current.x;
     const dy = touch.clientY - lastTapTreeRef.current.y;
-    const d2 = dx*dx + dy*dy;
+    const d2 = dx * dx + dy * dy;
 
-    if (dt <= TAP_TIME && d2 <= TAP_DIST*TAP_DIST) {
+    if (dt <= TAP_TIME && d2 <= TAP_DIST * TAP_DIST) {
       e.preventDefault();
       startTreeShake();
       lastTapTreeRef.current = { t: 0, x: 0, y: 0 };
@@ -352,9 +366,9 @@ export default function Ingame() {
     const dt = now - rec.t;
     const dx = touch.clientX - rec.x;
     const dy = touch.clientY - rec.y;
-    const d2 = dx*dx + dy*dy;
+    const d2 = dx * dx + dy * dy;
 
-    if (dt <= TAP_TIME && d2 <= TAP_DIST*TAP_DIST) {
+    if (dt <= TAP_TIME && d2 <= TAP_DIST * TAP_DIST) {
       e.preventDefault();
       startFallToBasket(id);
       lastTapPerEmoji.current[id] = { t: 0, x: 0, y: 0 };
@@ -364,6 +378,20 @@ export default function Ingame() {
     }
   }, [startFallToBasket, startWobble]);
 
+  /* ===== 마운트 시 자동 새로고침 효과 ===== */
+  React.useEffect(() => {
+    const targets = emojisRef.current
+      .filter(e => e.state === "onTree" || e.state === "wobble")
+      .map(e => e.id);
+    targets.forEach(id => dropToGroundOnly(id));
+    window.setTimeout(() => {
+      setEmojis(prev => {
+        const keep = prev.filter(e => e.state === "inBasket" || e.state === "toBasket");
+        return [...keep, ...spawnEmojis(20)];
+      });
+    }, 2000);
+  }, [dropToGroundOnly]);
+
   /* ===== 언마운트 클린업 ===== */
   React.useEffect(() => {
     return () => {
@@ -372,9 +400,6 @@ export default function Ingame() {
       Object.values(rafs.current).forEach(rid => cancelAnimationFrame(rid));
     };
   }, []);
-
-  const basketClass =
-    `basket ${basketFlip ? "flip" : ""} ${basketSwaying ? "sway" : ""}`;
 
   return (
     <div
@@ -387,7 +412,6 @@ export default function Ingame() {
         overflow: "hidden",
       }}
     >
-      {/* 비율 고정 스테이지 */}
       <div
         css={{
           position: "relative",
@@ -396,61 +420,116 @@ export default function Ingame() {
           overflow: "hidden",
         }}
       >
-      {/* 🌳 나무 */}
-      <img
-        src="/images/tree.png"
-        alt="tree"
-        draggable={false}
-        onDoubleClick={onTreeDoubleClick}
-        onTouchStart={onTreeTouchStart}
-        className={`tree ${treeShaking ? "shake" : ""}`}
-        css={{
-          position: "absolute",
-          inset: 0,
-          width: "100%",
-          height: "100%",
-          objectFit: "contain",
-          objectPosition: "center",
-          cursor: "pointer",
-          userSelect: "none",
-          WebkitTapHighlightColor: "transparent",
-          zIndex: 1,
-        }}
-      />
-
-      {/* 🍎 과일 레이어 (나무와 동기화해 좌우 이동) */}
-      <div
-        className={treeShaking ? "fruit-layer shake" : "fruit-layer"}
-        css={{
-          position: "absolute",
-          inset: 0,
-          zIndex: 3,               // 바구니 뒤(2)보다 위, 바구니 앞(4)보다 아래
-          pointerEvents: "none",   // 이벤트는 과일마다 처리
-        }}
-      >
+        <img
+          src="/images/tree.png"
+          alt="tree"
+          draggable={false}
+          onDoubleClick={onTreeDoubleClick}
+          onTouchStart={onTreeTouchStart}
+          className={`tree ${treeShaking ? "shake" : ""}`}
+          css={{
+            position: "absolute",
+            inset: 0,
+            width: "100%",
+            height: "100%",
+            objectFit: "contain",
+            objectPosition: "center",
+            cursor: "pointer",
+            userSelect: "none",
+            WebkitTapHighlightColor: "transparent",
+            zIndex: 1,
+          }}
+        />
+        <div
+          className={treeShaking ? "fruit-layer shake" : "fruit-layer"}
+          css={{
+            position: "absolute",
+            inset: 0,
+            zIndex: 3,
+            pointerEvents: "none",
+          }}
+        >
+          {emojis
+            .filter(e => e.state !== "removed" && e.state !== "inBasket" && e.state !== "toBasket")
+            .map((e) => {
+              const rotateWithTree = treeShaking && (e.state === "onTree" || e.state === "wobble");
+              return (
+                <div
+                  key={e.id}
+                  role="button"
+                  aria-label="emoji"
+                  onClick={() => onEmojiClick(e.id)}
+                  onDoubleClick={() => onEmojiDoubleClick(e.id)}
+                  onTouchStart={(ev) => onEmojiTouchStart(e.id, ev)}
+                  onTransitionEnd={(ev) => onEmojiTransitionEnd(ev, e.id)}
+                  className={[
+                    "emoji",
+                    e.state === "wobble" ? "wobble" : "",
+                    rotateWithTree ? "tree-rotate" : "",
+                    e.fresh ? "fresh-grow" : "",
+                  ].join(" ").trim()}
+                  css={{
+                    position: "absolute",
+                    left: `${e.left}%`,
+                    bottom: `${e.bottom}%`,
+                    fontSize: `calc(min(8vw, 48px) * ${e.scale.toFixed(2)})`,
+                    lineHeight: 1,
+                    transform: "translate(-50%, 0)",
+                    transformOrigin: "50% 70%",
+                    userSelect: "none",
+                    WebkitTapHighlightColor: "transparent",
+                    outline: "none",
+                    cursor: "pointer",
+                    pointerEvents: "auto",
+                    zIndex: 3,
+                  }}
+                >
+                  {e.char}
+                </div>
+              );
+            })}
+        </div>
+        <img
+          src="/images/basket.png"
+          alt="basket"
+          draggable={false}
+          onClick={onBasketClick}
+          className={`basket ${basketFlip ? "flip" : ""} ${basketSwaying ? "sway" : ""}`}
+          css={{
+            position: "absolute",
+            left: `${BASKET_LEFT}%`,
+            bottom: `${basketLift ? 13 + LIFT_Y : 13}%`,
+            transform: "translateX(-50%)",
+            width: "30%",
+            aspectRatio: "1",
+            objectFit: "contain",
+            userSelect: "none",
+            WebkitTapHighlightColor: "transparent",
+            cursor: basketCount > 0 ? "pointer" : "default",
+            transition: `bottom ${LIFT_MS}ms ease`,
+            zIndex: 2,
+          }}
+        />
         {emojis
-          .filter(e => e.state !== "removed" && e.state !== "inBasket" && e.state !== "toBasket")
+          .filter(e => e.state === "inBasket" || e.state === "toBasket")
           .map((e) => {
-            const rotateWithTree = treeShaking && (e.state === "onTree" || e.state === "wobble");
+            const effectiveBottom = e.bottom + (basketLift ? LIFT_Y : 0);
+            const transition = `left 0.8s ease, bottom ${LIFT_MS}ms ease, transform ${LIFT_MS}ms ease`;
             return (
               <div
                 key={e.id}
                 role="button"
                 aria-label="emoji"
-                onClick={() => onEmojiClick(e.id)}
-                onDoubleClick={() => onEmojiDoubleClick(e.id)}
-                onTouchStart={(ev) => onEmojiTouchStart(e.id, ev)}
                 onTransitionEnd={(ev) => onEmojiTransitionEnd(ev, e.id)}
                 className={[
                   "emoji",
-                  e.state === "wobble" ? "wobble" : "",
-                  rotateWithTree ? "tree-rotate" : "",   // ← 나무 흔들릴 때 각도만
-                  e.fresh ? "fresh-grow" : "",
+                  basketSwaying ? "in-basket-sway" : "",
+                  "in-basket",
                 ].join(" ").trim()}
                 css={{
                   position: "absolute",
                   left: `${e.left}%`,
-                  bottom: `${e.bottom}%`,
+                  bottom: `${effectiveBottom}%`,
                   fontSize: `calc(min(8vw, 48px) * ${e.scale.toFixed(2)})`,
                   lineHeight: 1,
                   transform: "translate(-50%, 0)",
@@ -458,8 +537,9 @@ export default function Ingame() {
                   userSelect: "none",
                   WebkitTapHighlightColor: "transparent",
                   outline: "none",
-                  cursor: "pointer",
-                  pointerEvents: "auto",
+                  cursor: "default",
+                  pointerEvents: "none",
+                  transition,
                   zIndex: 3,
                 }}
               >
@@ -467,95 +547,54 @@ export default function Ingame() {
               </div>
             );
           })}
+        <img
+          src="/images/basket_front.png"
+          alt="basket front"
+          draggable={false}
+          className={`basket ${basketFlip ? "flip" : ""} ${basketSwaying ? "sway" : ""}`}
+          css={{
+            position: "absolute",
+            left: `${BASKET_LEFT}%`,
+            bottom: `${basketLift ? 13 + LIFT_Y : 13}%`,
+            transform: "translateX(-50%)",
+            width: "30%",
+            aspectRatio: "1",
+            objectFit: "contain",
+            userSelect: "none",
+            WebkitTapHighlightColor: "transparent",
+            pointerEvents: "none",
+            transition: `bottom ${LIFT_MS}ms ease`,
+            zIndex: 4,
+          }}
+        />
       </div>
-
-      {/* 🧺 바구니 (뒤) */}
-      <img
-        src="/images/basket.png"
-        alt="basket"
-        draggable={false}
-        onClick={onBasketClick}
-        className={`basket ${basketFlip ? "flip" : ""} ${basketSwaying ? "sway" : ""}`}
-        css={{
-          position: "absolute",
-          left: `${BASKET_LEFT}%`,
-          bottom: `${basketLift ? 13 + LIFT_Y : 13}%`,
-          transform: "translateX(-50%)",
-          width: "30%",
-          aspectRatio: "1",
-          objectFit: "contain",
-          userSelect: "none",
-          WebkitTapHighlightColor: "transparent",
-          cursor: basketCount > 0 ? "pointer" : "default",
-          transition: `bottom ${LIFT_MS}ms ease`,
-          zIndex: 2,  // 바구니 뒤
-        }}
-      />
-
-      {/* 🍎 바구니 과일만 별도 렌더 (나무 영향 X, 바구니에 맞춰 스웨이) */}
-      {emojis
-        .filter(e => e.state === "inBasket" || e.state === "toBasket")
-        .map((e) => {
-          const effectiveBottom = e.bottom + (basketLift ? LIFT_Y : 0);
-          const transition = `left 0.8s ease, bottom ${LIFT_MS}ms ease, transform ${LIFT_MS}ms ease`;
-          return (
-            <div
-              key={e.id}
-              role="button"
-              aria-label="emoji"
-              onTransitionEnd={(ev) => onEmojiTransitionEnd(ev, e.id)}
-              className={[
-                "emoji",
-                basketSwaying ? "in-basket-sway" : "",  // ← 바구니 좌우 스웨이만
-                "in-basket",
-              ].join(" ").trim()}
-              css={{
-                position: "absolute",
-                left: `${e.left}%`,
-                bottom: `${effectiveBottom}%`,
-                fontSize: `calc(min(8vw, 48px) * ${e.scale.toFixed(2)})`,
-                lineHeight: 1,
-                transform: "translate(-50%, 0)",
-                transformOrigin: "50% 70%",
-                userSelect: "none",
-                WebkitTapHighlightColor: "transparent",
-                outline: "none",
-                cursor: "default",
-                pointerEvents: "none",
-                transition,
-                zIndex: 3,
-              }}
-            >
-              {e.char}
-            </div>
-          );
-        })}
-
-      {/* 🧺 바구니 앞 오버레이 */}
-      <img
-        src="/images/basket_front.png"
-        alt="basket front"
-        draggable={false}
-        className={`basket ${basketFlip ? "flip" : ""} ${basketSwaying ? "sway" : ""}`}
-        css={{
-          position: "absolute",
-          left: `${BASKET_LEFT}%`,
-          bottom: `${basketLift ? 13 + LIFT_Y : 13}%`,
-          transform: "translateX(-50%)",
-          width: "30%",
-          aspectRatio: "1",
-          objectFit: "contain",
-          userSelect: "none",
-          WebkitTapHighlightColor: "transparent",
-          pointerEvents: "none",
-          transition: `bottom ${LIFT_MS}ms ease`,
-          zIndex: 4, // 바구니 앞
-        }}
-      />
-
-      </div>
-
-      {/* 안내 */}
+      {basketCount === 5 && (
+        <button
+          onClick={handleConfirmClick}
+          className="confirm-button"
+          css={{
+            position: 'absolute',
+            top: '90%',
+            left: '50%',
+            transform: 'translate(-50%, -50%)',
+            zIndex: 10,
+            padding: '10px 40px',
+            font: '600 clamp(16px, 2.5vw, 22px)/1.4 "DungGeunMo", sans-serif',
+            color: '#fff',
+            background: '#E53E3E',
+            border: 'none',
+            borderRadius: '12px',
+            boxShadow: '0 4px 6px rgba(0, 0, 0, 0.2)',
+            cursor: 'pointer',
+            transition: 'background 0.2s',
+            '&:hover': {
+              background: '#C53030',
+            },
+          }}
+        >
+          확인
+        </button>
+      )}
       <div
         css={{
           position: "fixed",

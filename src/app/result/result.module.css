@@ -1,0 +1,117 @@
+/* 페이지 전체 컨테이너 */
+.container {
+  padding: 40px 20px;
+  text-align: center;
+  font-family: 'DungGeunMo', sans-serif;
+  color: #333;
+  background: #f0f0f0;
+  overflow: hidden;
+}
+
+/* 타이틀 */
+.title {
+  font-size: 3rem;
+  margin-bottom: 20px;
+  transition: opacity 0.5s, transform 0.5s;
+  opacity: 1;
+}
+/* 타이틀이 사라지는 효과 */
+.titleHidden {
+  opacity: 0;
+  transform: translateY(-20px);
+}
+
+/* 바구니 위치/크기 담당 컨테이너 */
+.basketContainer {
+  max-width: 450px;
+  margin: 20px auto;
+  position: relative;
+  aspect-ratio: 1;
+}
+
+/* 애니메이션(이동, 회전)을 담당하는 wrapper */
+.basketWrapper {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  /* transform 속성 2개를 각각 transition 설정 */
+  transition: transform 1.5s cubic-bezier(0.4, 0, 0.2, 1);
+  transform-origin: center center; /* 뒤집히는 기준점은 중앙 */
+}
+
+/* 위로 올라오는 상태 */
+.basketWrapperLifted {
+  transform: translateY(-150px);
+}
+
+/* 180도 뒤집히는 상태 (올라온 상태에서 추가) */
+.basketWrapperFlipped {
+  transform: translateY(-150px) rotate(180deg);
+}
+
+/* 바구니 이미지 스타일 */
+.basketImg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.basketFront {
+  z-index: 3;
+}
+
+/* 이모지 스타일 */
+.emoji {
+  position: absolute;
+  font-size: 4rem;
+  z-index: 2;
+  opacity: 0;
+  transform: translate(-50%, -50%);
+  transition: opacity 0.3s ease-out;
+}
+
+.emojiVisible {
+  opacity: 1;
+}
+
+.emojiFalling {
+  animation-name: fallStraight;
+  animation-duration: var(--duration);
+  animation-timing-function: var(--easing);
+  animation-delay: var(--delay);
+  animation-fill-mode: forwards;
+}
+
+/* 다시하기 버튼 */
+.retryButton {
+  display: inline-block;
+  margin-top: 30px;
+  padding: 12px 24px;
+  background: #0070f3;
+  color: white;
+  border-radius: 8px;
+  text-decoration: none;
+  font-size: 1.2rem;
+  border: none;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.5s 1s; /* 애니메이션 끝나고 1초 뒤 나타남 */
+}
+.retryButtonVisible {
+  opacity: 1;
+}
+
+/* 아래로 떨어지는 Keyframes */
+@keyframes fallStraight {
+  0% {
+    transform: translate(-50%, -50%) rotate(var(--start-rot));
+    opacity: 1;
+  }
+  100% {
+    /* Y축 값을 음수로 변경하여 '아래'로 떨어지도록 수정 */
+    transform: translate(var(--end-x), -80vh) rotate(var(--end-rot));
+    opacity: 0;
+  }
+}
