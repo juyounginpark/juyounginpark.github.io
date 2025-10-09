@@ -1,6 +1,7 @@
 "use client";
 import { useSearchParams } from 'next/navigation';
 import * as React from 'react';
+import { Suspense } from 'react';
 import Link from 'next/link';
 import styles from './result.module.css';
 
@@ -20,7 +21,7 @@ const initialPositions = [
   { bottom: '24%', left: '65%' }, // 하단 우
 ];
 
-export default function ResultPage() {
+function ResultContent() {
   const searchParams = useSearchParams();
   const emojiCharsString = searchParams.get('emojis');
   const [displayedEmojis, setDisplayedEmojis] = React.useState<EmojiWithStyle[]>([]);
@@ -124,5 +125,23 @@ export default function ResultPage() {
         결과 확인
       </Link>
     </div>
+  );
+}
+
+export default function ResultPage() {
+  return (
+    <Suspense fallback={
+      <div style={{ 
+        display: 'flex', 
+        justifyContent: 'center', 
+        alignItems: 'center', 
+        height: '100vh',
+        fontSize: '24px'
+      }}>
+        로딩 중...
+      </div>
+    }>
+      <ResultContent />
+    </Suspense>
   );
 }

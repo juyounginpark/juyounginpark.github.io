@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "deploy": "next build && node -e \"const fs = require('fs'); if (!fs.existsSync('out')) fs.mkdirSync('out', { recursive: true }); fs.writeFileSync('out/.nojekyll', '');\" && gh-pages -d out"
   },
   "dependencies": {
     "@emotion/react": "^11.14.0",
@@ -19,6 +20,7 @@
     "@types/node": "24.3.0",
     "@types/react": "19.1.10",
     "eslint": "^8.0.0",
-    "eslint-config-next": "^14.0.0"
+    "eslint-config-next": "^14.0.0",
+    "gh-pages": "^6.3.0"
   }
 }
