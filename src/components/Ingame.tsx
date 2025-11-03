@@ -12,12 +12,22 @@ import {
 
 import type { EmojiItem } from "../types/emoji";
 import { spawnEmojis } from "../utils/spawnEmojis";
+import {
+  apiStartGame,
+  apiPickEmoji,
+  apiRefreshEmojis,
+  apiDeleteFromBasket,
+  apiFinishGame,
+} from "@/lib/api";
 
 /* =========================
  * 컴포넌트
  * ========================= */
 export default function Ingame() {
   const router = useRouter();
+
+  /* 게임 세션 ID */
+  const [runId, setRunId] = React.useState<string | null>(null);
 
   /* 나무 흔들림 (더블탭/더블클릭만) */
   const [treeShaking, setTreeShaking] = React.useState(false);
@@ -55,18 +65,11 @@ export default function Ingame() {
 
   /* ===== 확인 버튼 클릭 시 페이지 이동 핸들러 ===== */
   const handleConfirmClick = React.useCallback(() => {
-    // 바구니에 담긴 이모지들의 문자(char)만 추출합니다.
-    const inBasketEmojiChars = emojisRef.current
-      .filter(e => e.state === "inBasket" || e.state === "toBasket")
-      .map(e => e.char);
-    
-    // 이모지 문자열을 쉼표로 구분하여 쿼리 파라미터로 만듭니다.
-    const queryString = inBasketEmojiChars.length > 0 
-      ? `?emojis=${encodeURIComponent(inBasketEmojiChars.join(','))}`
-      : '';
-    
-    router.push(`/result${queryString}`); // 쿼리 파라미터를 추가하여 페이지 이동
-  }, [router, emojisRef]);
+    if (!runId) return;
+    apiFinishGame(runId).then(data => {
+      router.push(`/result?share_id=${data.share_id}`);
+    }).catch(err => console.error("결과 생성 실패:", err));
+  }, [router, runId]);
 
   /* ===== 공통 ===== */
   const updateEmoji = React.useCallback((id: string, patch: Partial<EmojiItem>) => {
@@ -124,47 +127,47 @@ export default function Ingame() {
   /* ===== 이모지: 더블클릭/더블탭 → 낙하 → 0.5초 후 슬롯 이동 ===== */
   const startFallToBasket = React.useCallback((id: string) => {
     const current = emojisRef.current.find(e => e.id === id);
-    if (!current) return;
+    if (!current || !runId) return;
     if (current.state !== "onTree" && current.state !== "wobble") return;
     if (basketCount >= BASKET_CAPACITY) return;
 
-    const startY = current.bottom;
+    // API 호출
+    apiPickEmoji(runId, current.char).then(res => {
+      if (!res.ok) return; // 혹시 모를 상황 대비
 
-    setEmojis(prev => prev.map(e => (e.id === id ? { ...e, state: "falling", vy: 0 } : e)));
+      const startY = current.bottom;
+      setEmojis(prev => prev.map(e => (e.id === id ? { ...e, state: "falling", vy: 0 } : e)));
 
-    let y = startY;
-    let vy = 0;
+      let y = startY;
+      let vy = 0;
 
-    const step = (ts: number) => {
-      if (lastTs.current[id] == null) {
+      const step = (ts: number) => {
+        if (lastTs.current[id] == null) { lastTs.current[id] = ts; rafs.current[id] = requestAnimationFrame(step); return; }
+        const dt = (ts - lastTs.current[id]) / 1000;
         lastTs.current[id] = ts;
+        vy += GRAVITY * dt;
+        y += vy * dt;
+        if (y <= GROUND_BOTTOM) {
+          y = GROUND_BOTTOM;
+          setEmojis(prev => prev.map(e => (e.id === id ? { ...e, bottom: y, vy: 0, state: "ground" } : e)));
+          cancelAnimationFrame(rafs.current[id]);
+          delete rafs.current[id];
+          delete lastTs.current[id];
+          window.setTimeout(() => reserveSlotAndMove(id), 500);
+          return;
+        }
+        const yNow = y, vyNow = vy;
+        setEmojis(prev => prev.map(e => (e.id === id ? { ...e, bottom: yNow, vy: vyNow } : e)));
         rafs.current[id] = requestAnimationFrame(step);
-        return;
-      }
-      const dt = (ts - lastTs.current[id]) / 1000;
-      lastTs.current[id] = ts;
-
-      vy += GRAVITY * dt;
-      y += vy * dt;
-
-      if (y <= GROUND_BOTTOM) {
-        y = GROUND_BOTTOM;
-        setEmojis(prev => prev.map(e => (e.id === id ? { ...e, bottom: y, vy: 0, state: "ground" } : e)));
-        cancelAnimationFrame(rafs.current[id]);
-        delete rafs.current[id];
-        delete lastTs.current[id];
-
-        window.setTimeout(() => reserveSlotAndMove(id), 500);
-        return;
-      }
-
-      const yNow = y, vyNow = vy;
-      setEmojis(prev => prev.map(e => (e.id === id ? { ...e, bottom: yNow, vy: vyNow } : e)));
+      };
       rafs.current[id] = requestAnimationFrame(step);
-    };
 
-    rafs.current[id] = requestAnimationFrame(step);
-  }, [reserveSlotAndMove, basketCount]);
+    }).catch(err => {
+      // 409 DUPLICATE_PICK 또는 다른 에러 처리
+      console.error("이모지 선택 실패:", err);
+      // TODO: 사용자에게 피드백 (예: "이미 선택했거나 바구니가 가득 찼어요!")
+    });
+  }, [reserveSlotAndMove, basketCount, runId]);
 
   /* ===== 이모지: 바닥까지만 낙하(나무 흔들림 완료 후 강제 낙하) → 1초 뒤 제거 ===== */
   const dropToGroundOnly = React.useCallback((id: string) => {
@@ -269,50 +272,51 @@ export default function Ingame() {
     if (ids.length === 0) return;
     if (basketFlippingNow) return;
 
-    setBasketFlippingNow(true);
-    setBasketLift(true);
+    if (!runId) return;
+    apiDeleteFromBasket(runId).then(data => {
+      if (!data.ok) return;
 
-    window.setTimeout(() => {
-      setBasketFlip(true);
-      const cur = emojisRef.current;
-      ids.forEach(id => {
-        const it = cur.find(e => e.id === id);
-        if (!it) return;
-        const startBottom = it.bottom + LIFT_Y;
-        dropFromBasketAndRemove(id, startBottom);
-      });
+      setBasketFlippingNow(true);
+      setBasketLift(true);
+
       window.setTimeout(() => {
-        setBasketFlip(false);
-        setBasketLift(false);
-        setBasketFlippingNow(false);
-        removeInBasketAll();
-      }, FLIP_MS);
-    }, LIFT_MS);
-  }, [basketFlippingNow, removeInBasketAll, dropFromBasketAndRemove]);
+        setBasketFlip(true);
+        const cur = emojisRef.current;
+        ids.forEach(id => {
+          const it = cur.find(e => e.id === id);
+          if (!it) return;
+          const startBottom = it.bottom + LIFT_Y;
+          dropFromBasketAndRemove(id, startBottom);
+        });
+        window.setTimeout(() => {
+          setBasketFlip(false);
+          setBasketLift(false);
+          setBasketFlippingNow(false);
+          removeInBasketAll();
+        }, FLIP_MS);
+      }, LIFT_MS);
+    }).catch(err => console.error("바구니 비우기 실패:", err));
+  }, [basketFlippingNow, removeInBasketAll, dropFromBasketAndRemove, runId]);
 
   /* ===== 나무: 더블클릭/더블탭 → 2초 스웨이 → 이모지 낙하 → 제거 → 리스폰 ===== */
   const startTreeShake = React.useCallback(() => {
-    if (treeShaking) return;
+    if (treeShaking || !runId) return;
     setTreeShaking(true);
 
     const SHAKE_MS = 2000;
     window.setTimeout(() => setTreeShaking(false), SHAKE_MS);
 
-    const targets = emojisRef.current
-      .filter(e => e.state === "onTree" || e.state === "wobble")
-      .map(e => e.id);
-
-    window.setTimeout(() => {
-      targets.forEach(id => dropToGroundOnly(id));
-    }, SHAKE_MS);
-
-    window.setTimeout(() => {
-      setEmojis(prev => {
-        const keep = prev.filter(e => e.state === "inBasket" || e.state === "toBasket");
-        return [...keep, ...spawnEmojis(20)];
-      });
-    }, SHAKE_MS + 2000);
-  }, [treeShaking, dropToGroundOnly]);
+    apiRefreshEmojis(runId).then(data => {
+      const targets = emojisRef.current.filter(e => e.state === "onTree" || e.state === "wobble").map(e => e.id);
+      window.setTimeout(() => { targets.forEach(id => dropToGroundOnly(id)); }, SHAKE_MS);
+      window.setTimeout(() => {
+        setEmojis(prev => {
+          const keep = prev.filter(e => e.state === "inBasket" || e.state === "toBasket");
+          return [...keep, ...spawnEmojis(20, data.pool)];
+        });
+      }, SHAKE_MS + 2000);
+    }).catch(err => console.error("새로고침 실패:", err));
+  }, [treeShaking, dropToGroundOnly, runId]);
 
   const onTreeDoubleClick = React.useCallback(() => {
     startTreeShake();
@@ -378,19 +382,17 @@ export default function Ingame() {
     }
   }, [startFallToBasket, startWobble]);
 
-  /* ===== 마운트 시 자동 새로고침 효과 ===== */
+  /* ===== 마운트 시 게임 시작 및 초기화 ===== */
   React.useEffect(() => {
-    const targets = emojisRef.current
-      .filter(e => e.state === "onTree" || e.state === "wobble")
-      .map(e => e.id);
-    targets.forEach(id => dropToGroundOnly(id));
-    window.setTimeout(() => {
-      setEmojis(prev => {
-        const keep = prev.filter(e => e.state === "inBasket" || e.state === "toBasket");
-        return [...keep, ...spawnEmojis(20)];
-      });
-    }, 2000);
-  }, [dropToGroundOnly]);
+    apiStartGame().then(data => {
+      setRunId(data.run_id);
+      // 기존 이모지 낙하 효과
+      const targets = emojisRef.current.filter(e => e.state === "onTree" || e.state === "wobble").map(e => e.id);
+      targets.forEach(id => dropToGroundOnly(id));
+      // 2초 후 새 이모지 스폰
+      window.setTimeout(() => { setEmojis(spawnEmojis(20, data.pool)); }, 2000);
+    }).catch(err => console.error("게임 시작 실패:", err));
+  }, [dropToGroundOnly]); // dropToGroundOnly는 useCallback으로 감싸져 있어 한번만 실행됩니다.
 
   /* ===== 언마운트 클린업 ===== */
   React.useEffect(() => {

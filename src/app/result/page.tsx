@@ -4,6 +4,7 @@ import * as React from 'react';
 import { Suspense } from 'react';
 import Link from 'next/link';
 import styles from './result.module.css';
+import { apiGetSharedResult } from '@/lib/api';
 
 type EmojiWithStyle = {
   char: string;
@@ -23,7 +24,7 @@ const initialPositions = [
 
 function ResultContent() {
   const searchParams = useSearchParams();
-  const emojiCharsString = searchParams.get('emojis');
+  const shareId = searchParams.get('share_id');
   const [displayedEmojis, setDisplayedEmojis] = React.useState<EmojiWithStyle[]>([]);
   
   const [isLifted, setIsLifted] = React.useState(false);
@@ -40,16 +41,12 @@ function ResultContent() {
   };
 
   React.useEffect(() => {
-    if (emojiCharsString) {
-      try {
-        const parsedEmojis = decodeURIComponent(emojiCharsString).split(',');
-        
-        const emojisWithAnimation = parsedEmojis.map((char, index) => {
+    if (shareId) {
+      apiGetSharedResult(shareId).then(data => {
+        const emojisWithAnimation = data.top_emojis.map((char, index) => {
           const position = initialPositions[index % initialPositions.length];
-
-          const duration = 2;
-          const delay = index * 0.1;
-          const endX = `${(index - (parsedEmojis.length - 1) / 2) * 80}px`;
+          const duration = 2; const delay = index * 0.1;
+          const endX = `${(index - (data.top_emojis.length - 1) / 2) * 80}px`;
           const startRot = `${-20 + Math.random() * 40}deg`;
           const endRot = `${-360 + Math.random() * 720}deg`;
           const easing = `cubic-bezier(0.4, 0.2, 0.6, 1)`;
@@ -65,7 +62,7 @@ function ResultContent() {
           };
         });
         setDisplayedEmojis(emojisWithAnimation);
-      } catch (error) { console.error("이모지 파싱 에러:", error); }
+      }).catch(error => console.error("공유 결과 로딩 실패:", error));
     }
     
     const visibleTimer = setTimeout(() => { setEmojisVisible(true); }, 200);
@@ -77,7 +74,7 @@ function ResultContent() {
       clearTimeout(liftTimer);
       clearTimeout(flipTimer);
     };
-  }, [emojiCharsString]);
+  }, [shareId]);
 
   return (
     <div className={styles.container}>

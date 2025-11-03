@@ -3,12 +3,12 @@ import type { EmojiItem } from "../types/emoji";
 import { rand, dist2 } from "./math";
 
 /** 겹치지 않게 스폰 (+ fresh: true 보장) */
-export function spawnEmojis(count = 20): EmojiItem[] {
+export function spawnEmojis(count = 20, pool: string[] = EMOJI_POOL): EmojiItem[] {
   const placed: EmojiItem[] = [];
   const MAX_TRIES = 200;
 
   for (let i = 0; i < count; i++) {
-    const char = EMOJI_POOL[i % EMOJI_POOL.length];
+    const char = pool[i % pool.length];
     const scale = rand(SCALE_MIN, SCALE_MAX);
     const radius = RADIUS_BASE_PCT * scale;
 
