@@ -1,65 +1,115 @@
-"use client"; // useState, useEffect를 사용하므로 클라이언트 컴포넌트로 지정합니다.
+"use client";
 
 import * as React from 'react';
+import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import Image from 'next/image'; // Next.js의 이미지 최적화 컴포넌트 사용
+import Image from 'next/image';
+import { Suspense } from 'react';
 
-// 1. 16개 MBTI 데이터와 설명을 임시로 저장합니다.
-const mbtiData = [
-  { type: 'ISTJ', description: '현실적이고 책임감이 강하며, 한 번 시작한 일은 끝까지 해내는 성실한 유형입니다.' },
-  { type: 'ISFJ', description: '따뜻하고 겸손하며, 다른 사람의 감정을 존중하고 배려하는 마음이 깊은 유형입니다.' },
-  { type: 'INFJ', description: '깊은 통찰력과 직관을 가지고 있으며, 자신의 신념을 실현하고자 하는 이상주의자 유형입니다.' },
-  { type: 'INTJ', description: '독창적이고 논리적이며, 복잡한 문제를 해결하고 시스템을 개선하는 데 뛰어난 유형입니다.' },
-  { type: 'ISTP', description: '과묵하고 관찰력이 뛰어나며, 도구를 사용하여 무언가를 만들거나 탐구하는 것을 즐기는 유형입니다.' },
-  { type: 'ISFP', description: '온화하고 친절하며, 현재의 순간을 소중히 여기고 삶의 아름다움을 즐기는 예술가 유형입니다.' },
-  { type: 'INFP', description: '낭만적이고 이상주의적이며, 자신의 가치관과 내면의 조화를 중요하게 생각하는 중재자 유형입니다.' },
-  { type: 'INTP', description: '지적 호기심이 왕성하고, 논리적인 분석과 아이디어 탐구를 즐기는 사색가 유형입니다.' },
-  { type: 'ESTP', description: '에너지가 넘치고 모험을 즐기며, 실제 경험을 통해 배우고 문제를 해결하는 것을 선호하는 유형입니다.' },
-  { type: 'ESFP', description: '사교적이고 낙천적이며, 사람들과 어울리며 즐거운 분위기를 만드는 것을 좋아하는 연예인 유형입니다.' },
-  { type: 'ENFP', description: '열정적이고 상상력이 풍부하며, 새로운 가능성을 탐색하고 긍정적인 변화를 추구하는 활동가 유형입니다.' },
-  { type: 'ENTP', description: '지적이고 독창적이며, 다양한 관점에서 토론하고 새로운 아이디어를 제시하는 것을 즐기는 변론가 유형입니다.' },
-  { type: 'ESTJ', description: '체계적이고 현실적이며, 규칙과 절차에 따라 일을 효율적으로 처리하는 것을 중요하게 생각하는 경영자 유형입니다.' },
-  { type: 'ESFJ', description: '친절하고 사교적이며, 주변 사람들을 돕고 조화로운 관계를 유지하는 데 기쁨을 느끼는 집정관 유형입니다.' },
-  { type: 'ENFJ', description: '카리스마 있고 사람들을 이끄는 능력이 있으며, 다른 사람의 성장을 돕고 영감을 주는 데 뛰어난 유형입니다.' },
-  { type: 'ENTJ', description: '타고난 리더십과 결단력을 바탕으로, 목표를 설정하고 대담하게 계획을 실행해나가는 통솔자 유형입니다.' },
-];
-
-type MbtiInfo = {
-  type: string;
-  description: string;
+type EmojiResultResponse = {
+  style: string;
+  lines: string[];
+  picked_emojis: string[];
+  share_id: string;
 };
 
-export default function FinalResultPage() {
-  // 2. 랜덤으로 선택된 MBTI 결과를 저장할 상태 변수
-  const [result, setResult] = React.useState<MbtiInfo | null>(null);
+function FinalResultContent() {
+  const searchParams = useSearchParams();
+  const shareId = searchParams.get('share_id');
+  
+  const [result, setResult] = React.useState<EmojiResultResponse | null>(null);
+  const [loading, setLoading] = React.useState(true);
+  const [error, setError] = React.useState<string | null>(null);
 
-  // 3. 페이지가 로드될 때 한 번만 실행하여 랜덤 MBTI를 선택
   React.useEffect(() => {
-    const randomIndex = Math.floor(Math.random() * mbtiData.length);
-    setResult(mbtiData[randomIndex]);
-  }, []); // 의존성 배열을 비워두어 최초 렌더링 시에만 실행
+    const fetchResult = async () => {
+      if (!shareId) {
+        setError('공유 ID가 없습니다.');
+        setLoading(false);
+        return;
+      }
 
-  // 4. 결과가 선택되기 전에는 로딩 메시지를 표시
-  if (!result) {
+      try {
+        console.log("🔄 최종 결과 요청 중...", shareId);
+        
+        const response = await fetch('/api/emoji/result', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            share_id: shareId,
+          }),
+        });
+
+        if (!response.ok) {
+          throw new Error(`API 요청 실패: ${response.status}`);
+        }
+
+        const data: EmojiResultResponse = await response.json();
+        console.log("✅ API 응답:", data);
+        
+        setResult(data);
+        setLoading(false);
+      } catch (err) {
+        console.error("❌ API 요청 에러:", err);
+        setError(err instanceof Error ? err.message : '알 수 없는 오류가 발생했습니다.');
+        setLoading(false);
+      }
+    };
+
+    fetchResult();
+  }, [shareId]);
+
+  // 로딩 중
+  if (loading) {
     return (
       <div style={pageStyle}>
-        <h1>결과를 분석 중입니다...</h1>
+        <h1 style={{ fontSize: '2rem' }}>결과를 분석 중입니다...</h1>
       </div>
     );
   }
 
-  // 5. 결과가 선택되면 내용을 렌더링
+  // 에러 발생
+  if (error) {
+    return (
+      <div style={pageStyle}>
+        <h1 style={{ fontSize: '2rem', color: '#E53E3E' }}>오류 발생</h1>
+        <p style={{ fontSize: '1.2rem', marginTop: '20px' }}>{error}</p>
+        <p style={{ fontSize: '0.9rem', color: '#666', marginTop: '10px' }}>
+          Share ID: {shareId || '없음'}
+        </p>
+        <Link href="/" style={buttonStyle}>
+          처음으로 돌아가기
+        </Link>
+      </div>
+    );
+  }
+
+  // 결과 없음
+  if (!result) {
+    return (
+      <div style={pageStyle}>
+        <h1 style={{ fontSize: '2rem' }}>결과를 찾을 수 없습니다.</h1>
+        <Link href="/" style={buttonStyle}>
+          처음으로 돌아가기
+        </Link>
+      </div>
+    );
+  }
+
+  // 정상 렌더링
   return (
     <div style={pageStyle}>
       <h1 style={{ fontSize: '2.5rem', marginBottom: '1rem' }}>
-        당신은 <span style={{ color: '#0070f3' }}>[{result.type}]</span>입니다.
+        당신은 <span style={{ color: '#0070f3' }}>[{result.style}]</span>입니다.
       </h1>
 
       <Image
-        src={`/images/mbti/${result.type}.png`}
-        alt={`${result.type} 이미지`}
-        width={400} // 🌟 주의: 실제 이미지 크기에 맞게 조절해주세요.
-        height={400} // 🌟 주의: 실제 이미지 크기에 맞게 조절해주세요.
+        src={`/images/mbti/${result.style}.png`}
+        alt={`${result.style} 이미지`}
+        width={400}
+        height={400}
         style={{
           maxWidth: '90%',
           height: 'auto',
@@ -69,14 +119,33 @@ export default function FinalResultPage() {
         }}
       />
       
-      <p style={{
+      {/* API에서 받은 문장들을 표시 */}
+      <div style={{
         fontSize: '1.2rem',
-        lineHeight: '1.6',
+        lineHeight: '1.8',
         maxWidth: '600px',
-        padding: '0 20px'
+        padding: '0 20px',
+        marginTop: '20px'
       }}>
-        {result.description}
-      </p>
+        {result.lines.map((line, index) => (
+          <p key={index} style={{ marginBottom: '12px' }}>
+            {line}
+          </p>
+        ))}
+      </div>
+
+      {/* 선택된 이모지 표시 */}
+      <div style={{
+        display: 'flex',
+        gap: '15px',
+        fontSize: '3rem',
+        marginTop: '30px',
+        marginBottom: '20px'
+      }}>
+        {result.picked_emojis.map((emoji, index) => (
+          <span key={index}>{emoji}</span>
+        ))}
+      </div>
 
       <Link href="/" style={buttonStyle}>
         처음으로 돌아가기
@@ -85,7 +154,26 @@ export default function FinalResultPage() {
   );
 }
 
-// 스타일 객체 (가독성을 위해 분리)
+export default function FinalResultPage() {
+  return (
+    <Suspense fallback={
+      <div style={{ 
+        display: 'flex', 
+        justifyContent: 'center', 
+        alignItems: 'center', 
+        height: '100vh',
+        fontSize: '24px',
+        fontFamily: '"DungGeunMo", sans-serif'
+      }}>
+        로딩 중...
+      </div>
+    }>
+      <FinalResultContent />
+    </Suspense>
+  );
+}
+
+// 스타일 객체
 const pageStyle: React.CSSProperties = {
   display: 'flex',
   flexDirection: 'column',
@@ -94,7 +182,8 @@ const pageStyle: React.CSSProperties = {
   minHeight: '100vh',
   gap: '20px',
   fontFamily: '"DungGeunMo", sans-serif',
-  textAlign: 'center'
+  textAlign: 'center',
+  padding: '20px'
 };
 
 const buttonStyle: React.CSSProperties = {
@@ -104,5 +193,6 @@ const buttonStyle: React.CSSProperties = {
   color: 'white',
   borderRadius: '8px',
   textDecoration: 'none',
-  fontSize: '1.2rem'
-};
+  fontSize: '1.2rem',
+  cursor: 'pointer'
+}

@@ -60,7 +60,7 @@ export async function apiDeleteEmojisFromBasket() {
 }
 
 export async function apiFinishGame({ run_id }: { run_id: string }) {
-  return fetchApi('/api/emoji/finish', {
+  return fetchApi('/api/emoji/result', {
     method: 'POST',
     body: JSON.stringify({ run_id }),
   });

@@ -4,13 +4,19 @@ import * as React from 'react';
 import { Suspense } from 'react';
 import Link from 'next/link';
 import styles from './result.module.css';
-import { apiGetResult } from '@/lib/api';
 
 type EmojiWithStyle = {
   char: string;
   style: React.CSSProperties;
   initialBottom: string;
   initialLeft: string;
+};
+
+type EmojiResultResponse = {
+  style: string;
+  lines: string[];
+  picked_emojis: string[];
+  share_id: string;
 };
 
 const initialPositions = [
@@ -41,65 +47,82 @@ function ResultContent() {
   };
 
   React.useEffect(() => {
-    // 세션 스토리지에서 선택한 이모지 가져오기
-    let selectedEmojis: string[] = [];
-    if (typeof window !== 'undefined') {
-      const stored = sessionStorage.getItem('selected_emojis');
-      if (stored) {
-        try {
-          selectedEmojis = JSON.parse(stored);
-          console.log("📦 세션에서 불러온 이모지:", selectedEmojis);
-        } catch (e) {
-          console.error("⚠️ 세션 스토리지 파싱 실패:", e);
-        }
+    const fetchEmojiResult = async () => {
+      if (!shareId) {
+        setError('공유 ID가 없습니다.');
+        setLoading(false);
+        return;
       }
-    }
 
-    // 이모지가 없으면 기본값 사용
-    if (!selectedEmojis || selectedEmojis.length === 0) {
-      console.warn("⚠️ 저장된 이모지 없음, 기본값 사용");
-      selectedEmojis = ['🌟', '✨', '🎯', '🎨', '🌈'];
-    }
+      try {
+        console.log("🔄 이모지 결과 요청 중...", shareId);
+        
+        const response = await fetch('/api/emoji/result', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            share_id: shareId,
+          }),
+        });
 
-    console.log(`📊 표시할 이모지: ${selectedEmojis.length}개`, selectedEmojis);
+        if (!response.ok) {
+          throw new Error(`API 요청 실패: ${response.status}`);
+        }
 
-    const emojisWithAnimation = selectedEmojis.map((char, index) => {
-      const position = initialPositions[index % initialPositions.length];
-      const duration = 2;
-      const delay = index * 0.1;
-      const endX = `${(index - (selectedEmojis.length - 1) / 2) * 80}px`;
-      const startRot = `${-20 + Math.random() * 40}deg`;
-      const endRot = `${-360 + Math.random() * 720}deg`;
-      const easing = `cubic-bezier(0.4, 0.2, 0.6, 1)`;
+        const data: EmojiResultResponse = await response.json();
+        console.log("✅ API 응답:", data);
 
-      return {
-        char,
-        initialBottom: position.bottom,
-        initialLeft: position.left,
-        style: {
-          '--duration': `${duration}s`,
-          '--delay': `${delay}s`,
-          '--easing': easing,
-          '--start-rot': startRot,
-          '--end-x': endX,
-          '--end-rot': endRot,
-        } as React.CSSProperties,
-      };
-    });
+        const selectedEmojis = data.picked_emojis || [];
 
-    setDisplayedEmojis(emojisWithAnimation);
-    setLoading(false);
+        if (selectedEmojis.length === 0) {
+          console.warn("⚠️ 이모지가 없음, 기본값 사용");
+          selectedEmojis.push('🌟', '✨', '🎯', '🎨', '🌈');
+        }
 
-    // 애니메이션 시작
-    const visibleTimer = setTimeout(() => setEmojisVisible(true), 200);
-    const liftTimer = setTimeout(() => setIsLifted(true), 500);
-    const flipTimer = setTimeout(() => setIsFlipped(true), 2500);
+        console.log(`📊 표시할 이모지: ${selectedEmojis.length}개`, selectedEmojis);
 
-    return () => {
-      clearTimeout(visibleTimer);
-      clearTimeout(liftTimer);
-      clearTimeout(flipTimer);
+        const emojisWithAnimation = selectedEmojis.map((char, index) => {
+          const position = initialPositions[index % initialPositions.length];
+          const duration = 2;
+          const delay = index * 0.1;
+          const endX = `${(index - (selectedEmojis.length - 1) / 2) * 80}px`;
+          const startRot = `${-20 + Math.random() * 40}deg`;
+          const endRot = `${-360 + Math.random() * 720}deg`;
+          const easing = `cubic-bezier(0.4, 0.2, 0.6, 1)`;
+
+          return {
+            char,
+            initialBottom: position.bottom,
+            initialLeft: position.left,
+            style: {
+              '--duration': `${duration}s`,
+              '--delay': `${delay}s`,
+              '--easing': easing,
+              '--start-rot': startRot,
+              '--end-x': endX,
+              '--end-rot': endRot,
+            } as React.CSSProperties,
+          };
+        });
+
+        setDisplayedEmojis(emojisWithAnimation);
+        setLoading(false);
+
+        // 애니메이션 시작
+        setTimeout(() => setEmojisVisible(true), 200);
+        setTimeout(() => setIsLifted(true), 500);
+        setTimeout(() => setIsFlipped(true), 2500);
+
+      } catch (err) {
+        console.error("❌ API 요청 에러:", err);
+        setError(err instanceof Error ? err.message : '알 수 없는 오류가 발생했습니다.');
+        setLoading(false);
+      }
     };
+
+    fetchEmojiResult();
   }, [shareId]);
 
   // 로딩 중
@@ -174,7 +197,10 @@ function ResultContent() {
         </div>
       </div>
 
-      <Link href="/final_result" className={`${styles.retryButton} ${showRetry ? styles.retryButtonVisible : ''}`}>
+      <Link 
+        href={`/final_result?share_id=${shareId}`} 
+        className={`${styles.retryButton} ${showRetry ? styles.retryButtonVisible : ''}`}
+      >
         결과 확인
       </Link>
     </div>
