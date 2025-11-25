@@ -79,4 +79,5 @@ label chapter10_2:
     pjy "그럼 우리, 사귈까?"
     main "… 네. 앞으로도 쭉 함께해요."
 
-    return
+    "end 1 : 박주연 엔딩"
+    jump chapter10_99

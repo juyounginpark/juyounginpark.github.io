@@ -56,4 +56,5 @@ label chapter10_3:
     play sound jsk_giggle
     jsk "주말에도 가고, 오늘도 가자. 헤헤…"
 
-    return
+    "end 2 : 정성경 엔딩"
+    jump chapter10_99

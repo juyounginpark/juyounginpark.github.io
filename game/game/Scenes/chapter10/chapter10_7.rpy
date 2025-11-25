@@ -11,4 +11,5 @@ label chapter10_7:
     main "(다음엔 좀 더 솔직하고, 좀 더 용감해질 거야.)"
     main "(그리고 언젠가는… 후회 없는 선택을 할 수 있겠지.)"
     
-    return
+    "end 6 : 아웃사이더 엔딩"
+    jump chapter10_99
